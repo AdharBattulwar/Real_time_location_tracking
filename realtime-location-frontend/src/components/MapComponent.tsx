@@ -1,89 +1,204 @@
-// src/components/MapComponent.tsx
+import React, { useState, useEffect } from 'react';
+import ReactMapGL, { Marker, Popup, Source, Layer } from 'react-map-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { useLocation } from '../hooks/useLocation';
 
-import React, { useEffect, useState } from "react";
-import ReactMapGL, { Marker } from "react-map-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { useLocation } from "../hooks/useLocation";
+// Mapbox access token
+const MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
-interface MapComponentProps {
-  username: string;
-}
+const MapComponent: React.FC<{ username: string }> = ({ username }) => {
+  const [start, setStart] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [end, setEnd] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isShared, setIsShared] = useState<boolean>(false);
+  const { currentUser, users, error, createRide, matchingRides } = useLocation(username);
 
-const MapComponent: React.FC<MapComponentProps> = ({ username }) => {
-  const { currentUser, users, error } = useLocation(username);
+  // Map viewport state
   const [viewport, setViewport] = useState({
-    latitude: 37.7749, // Default to San Francisco
-    longitude: -122.4194,
-    zoom: 12,
+    latitude: currentUser?.latitude || 0,
+    longitude: currentUser?.longitude || 0,
+    zoom: 13,
   });
 
+  // Update viewport when the current user's location changes
   useEffect(() => {
     if (currentUser) {
-      setViewport((prev) => ({
-        ...prev,
+      setStart({ latitude: currentUser.latitude, longitude: currentUser.longitude });
+      setViewport({
         latitude: currentUser.latitude,
         longitude: currentUser.longitude,
-      }));
+        zoom: 13,
+      });
     }
   }, [currentUser]);
 
-  if (error) {
-    return <div>Error: {error}</div>;
-  }
+  // Handle ride creation
+  const handleCreateRide = () => {
+    if (start && end) {
+      createRide(start, end, isShared);
+    }
+  };
 
   return (
-    <ReactMapGL
-      {...viewport}
-      mapStyle="mapbox://styles/mapbox/streets-v11"
-      mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-      dragPan={true}
-      scrollZoom={true}
-    >
-      {/* Current User's Marker */}
-      {currentUser && (
-        <Marker
-          longitude={currentUser.longitude}
-          latitude={currentUser.latitude}
-        >
-          <div style={{ color: "blue" }}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              height="24"
-              viewBox="0 0 24 24"
-              width="24"
-              fill="blue"
-            >
-              <path d="M0 0h24v24H0z" fill="none" />
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
-            </svg>
-          </div>
-        </Marker>
-      )}
+    <div style={{ height: '100vh', width: '100%' }}>
+      {/* Mapbox Map */}
+      <ReactMapGL
+        {...viewport}
+        style={{ width: '100%', height: '100%' }}
+        mapStyle="mapbox://styles/mapbox/streets-v11"
+        mapboxAccessToken={MAPBOX_ACCESS_TOKEN}
+        onMove={(evt) => setViewport(evt.viewState)}
+      >
+        {/* Current User Marker */}
+        {currentUser && (
+          <Marker latitude={currentUser.latitude} longitude={currentUser.longitude}>
+            <div style={{ color: 'blue', fontSize: '20px' }}>📍</div>
+            <Popup latitude={currentUser.latitude} longitude={currentUser.longitude}>
+              {currentUser.username} (You)
+            </Popup>
+          </Marker>
+        )}
 
-      {/* Other Users' Markers */}
-      {users
-        .filter((user) => user.id !== (currentUser?.id || ""))
-        .map((user) => (
-          <Marker
-            key={user.id}
-            longitude={user.longitude}
-            latitude={user.latitude}
-          >
-            <div style={{ color: "red" }}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                height="24"
-                viewBox="0 0 24 24"
-                width="24"
-                fill="red"
-              >
-                <path d="M0 0h24v24H0z" fill="none" />
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
-              </svg>
-            </div>
+        {/* Other Users Markers */}
+        {users.map((user) => (
+          <Marker key={user.id} latitude={user.latitude} longitude={user.longitude}>
+            <div style={{ color: 'red', fontSize: '20px' }}>📍</div>
+            <Popup latitude={user.latitude} longitude={user.longitude}>
+              {user.username}
+            </Popup>
           </Marker>
         ))}
-    </ReactMapGL>
+
+        {/* Matching Rides Polylines */}
+        {matchingRides.map((ride) => (
+          <Source
+            key={ride.id}
+            id={`ride-${ride.id}`}
+            type="geojson"
+            data={{
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: [
+                  [ride.start.longitude, ride.start.latitude],
+                  [ride.end.longitude, ride.end.latitude],
+                ],
+              },
+            }}
+          >
+            <Layer
+              id={`ride-line-${ride.id}`}
+              type="line"
+              paint={{
+                'line-color': 'blue',
+                'line-width': 3,
+              }}
+            />
+          </Source>
+        ))}
+      </ReactMapGL>
+
+      {/* Ride Creation Form */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left: '20px',
+          backgroundColor: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          zIndex: 1000,
+        }}
+      >
+        <h3>Create a Ride</h3>
+        <label>
+          Start: {start ? `${start.latitude}, ${start.longitude}` : 'Not set'}
+        </label>
+        <br />
+        <label>
+          End Latitude:
+          <input
+            type="number"
+            value={end?.latitude || ''}
+            onChange={(e) =>
+              setEnd((prev) => ({
+                latitude: parseFloat(e.target.value),
+                longitude: prev?.longitude || 0,
+              }))
+            }
+          />
+        </label>
+        <br />
+        <label>
+          End Longitude:
+          <input
+            type="number"
+            value={end?.longitude || ''}
+            onChange={(e) =>
+              setEnd((prev) => ({
+                latitude: prev?.latitude || 0,
+                longitude: parseFloat(e.target.value),
+              }))
+            }
+          />
+        </label>
+        <br />
+        <label>
+          Share Ride:
+          <input
+            type="checkbox"
+            checked={isShared}
+            onChange={(e) => setIsShared(e.target.checked)}
+          />
+        </label>
+        <br />
+        <button onClick={handleCreateRide}>Create Ride</button>
+      </div>
+
+      {/* Matching Rides List */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          backgroundColor: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          zIndex: 1000,
+        }}
+      >
+        <h3>Matching Rides</h3>
+        {matchingRides.length > 0 ? (
+          <ul>
+            {matchingRides.map((ride) => (
+              <li key={ride.id}>
+                Ride from ({ride.start.latitude}, {ride.start.longitude}) to (
+                {ride.end.latitude}, {ride.end.longitude})
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No matching rides found.</p>
+        )}
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '20px',
+            backgroundColor: 'red',
+            color: 'white',
+            padding: '10px',
+            borderRadius: '5px',
+            zIndex: 1000,
+          }}
+        >
+          {error}
+        </div>
+      )}
+    </div>
   );
 };
 
