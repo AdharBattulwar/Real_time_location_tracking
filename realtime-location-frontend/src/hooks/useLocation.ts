@@ -9,10 +9,20 @@ interface User {
   longitude: number;
 }
 
+interface Ride {
+  id: string;
+  userId: string;
+  start: { latitude: number; longitude: number };
+  end: { latitude: number; longitude: number };
+  shared: boolean;
+}
+
 interface UseLocationReturn {
   currentUser: User | null;
   users: User[];
   error: string | null;
+  createRide: (start: { latitude: number; longitude: number }, end: { latitude: number; longitude: number }, shared: boolean) => void;
+  matchingRides: Ride[];
 }
 
 export const useLocation = (username: string): UseLocationReturn => {
@@ -20,6 +30,7 @@ export const useLocation = (username: string): UseLocationReturn => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [matchingRides, setMatchingRides] = useState<Ride[]>([]);
 
   useEffect(() => {
     // Initialize Socket.io client
@@ -43,6 +54,11 @@ export const useLocation = (username: string): UseLocationReturn => {
       setUsers(users);
     });
 
+    // Handle receiving matching rides
+    newSocket.on("matchingRides", (rides: Ride[]) => {
+      setMatchingRides(rides);
+    });
+
     // Handle disconnection
     newSocket.on("disconnect", () => {
       console.log("Disconnected from server");
@@ -61,7 +77,7 @@ export const useLocation = (username: string): UseLocationReturn => {
     const emitLocation = throttle((latitude: number, longitude: number) => {
       if (socket) {
         socket.emit("locationUpdate", {
-          id: socket.id,
+          id: socket.id || '',
           latitude,
           longitude,
         });
@@ -74,7 +90,7 @@ export const useLocation = (username: string): UseLocationReturn => {
         (position) => {
           const { latitude, longitude } = position.coords;
           setCurrentUser({
-            id: socket.id,
+            id: socket.id || '',
             username,
             latitude,
             longitude,
@@ -104,5 +120,17 @@ export const useLocation = (username: string): UseLocationReturn => {
     }
   }, [socket, username]);
 
-  return { currentUser, users, error };
+  // Function to create a ride
+  const createRide = (start: { latitude: number; longitude: number }, end: { latitude: number; longitude: number }, shared: boolean) => {
+    if (socket) {
+      socket.emit("createRide", {
+        userId: socket.id,
+        start,
+        end,
+        shared,
+      });
+    }
+  };
+
+  return { currentUser, users, error, createRide, matchingRides };
 };

@@ -4,6 +4,10 @@ import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
+import express from "express";
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
+import cors from "cors";
 
 // Initialize Express app
 const app = express();
@@ -46,6 +50,7 @@ const users: { [key: string]: User } = {};
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
+io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Handle user joining with info
@@ -81,16 +86,29 @@ io.on("connection", (socket) => {
         // Broadcast updated users to all clients
         io.emit("users", Object.values(users));
       }
+  socket.on(
+    "locationUpdate",
+    (data: { id: string; latitude: number; longitude: number }) => {
+      const { id, latitude, longitude } = data;
+      if (users[id]) {
+        users[id].latitude = latitude;
+        users[id].longitude = longitude;
+        // Broadcast updated users to all clients
+        io.emit("users", Object.values(users));
+      }
     }
+  );
   );
 
   // Handle disconnection
+  socket.on("disconnect", () => {
   socket.on("disconnect", () => {
     const id = socket.data.id;
     if (id && users[id]) {
       console.log(`User disconnected: ${users[id].username} (${id})`);
       delete users[id];
       // Broadcast updated users to all clients
+      io.emit("users", Object.values(users));
       io.emit("users", Object.values(users));
     }
   });
@@ -101,3 +119,4 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
